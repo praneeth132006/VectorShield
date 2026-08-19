@@ -25,12 +25,20 @@ htmlcov/
 # Data & models (never commit trained artifacts or datasets)
 *.db
 *.sqlite3
+# Trained artifacts are derived data. The shipped injection classifier is
+# committed (see models/) so a fresh clone detects attacks out of the box;
+# everything else stays out.
 *.joblib
+!models/injection_clf.joblib
 *.pkl
 training/data/*
 !training/data/.gitkeep
+# The published run is committed so the README's numbers are auditable; ad-hoc
+# runs are not.
 benchmark/results/*
 !benchmark/results/.gitkeep
+!benchmark/results/benchmark.md
+!benchmark/results/benchmark.json
 
 # OS / editor
 .DS_Store

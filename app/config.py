@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     ollama_default_model: str = "llama3.2:3b"
     upstream_timeout_seconds: float = 60.0
 
+    # --- Detection -------------------------------------------------------
+    # Stage 1 artifact. Missing file = rule layer only, with a startup warning.
+    classifier_model_path: str = "models/injection_clf.joblib"
+
     # --- Security policy defaults ----------------------------------------
     # "open": ambiguous verdicts are allowed and flagged. A false positive that
     # breaks a real chatbot costs more than one logged probe.

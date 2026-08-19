@@ -1,0 +1,16 @@
+{
+  "precision": 0.9241,
+  "recall": 0.9125,
+  "f1": 0.9182,
+  "false_positive_rate": 0.0526,
+  "roc_auc": 0.9746,
+  "average_precision": 0.9684,
+  "confusion_matrix": {
+    "tn": 108,
+    "fp": 6,
+    "fn": 7,
+    "tp": 73
+  },
+  "inference_ms_per_item": 0.074,
+  "test_size": 194
+}
