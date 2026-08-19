@@ -1,0 +1,14 @@
+# --- Gateway core ---
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+pydantic>=2.9,<3.0
+pydantic-settings>=2.6,<3.0
+httpx>=0.27,<1.0
+
+# --- Storage ---
+sqlalchemy[asyncio]>=2.0.36,<3.0
+aiosqlite>=0.20
+asyncpg>=0.30          # PostgreSQL (Supabase/Railway) in deployment
+
+# --- Rate limiting (optional at runtime: falls back to in-memory) ---
+redis>=5.2,<7.0
