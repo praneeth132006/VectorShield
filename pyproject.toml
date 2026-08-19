@@ -1,0 +1,22 @@
+[project]
+name = "vectorshield"
+version = "0.1.0"
+description = "An AI security gateway that inspects every prompt and every response before they reach your LLM or your users."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 95
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "C4", "RUF"]
+ignore = [
+    "B008",  # FastAPI's Depends() in defaults is the documented pattern
+    "S101",  # asserts are fine in tests and internal invariants
+    "B027",  # optional lifecycle hooks on ABCs are deliberate, not omissions
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]  # fixture keys and canaries are not real secrets

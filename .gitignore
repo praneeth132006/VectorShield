@@ -1,0 +1,38 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+.python-version
+
+# Testing / tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Data & models (never commit trained artifacts or datasets)
+*.db
+*.sqlite3
+*.joblib
+*.pkl
+training/data/*
+!training/data/.gitkeep
+benchmark/results/*
+!benchmark/results/.gitkeep
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
