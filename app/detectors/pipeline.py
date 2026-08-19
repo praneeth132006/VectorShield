@@ -85,17 +85,36 @@ class DetectionPipeline:
         )
 
 
-def build_pipeline() -> DetectionPipeline:
-    """Assemble the shipped detectors.
+def build_inbound_pipeline() -> DetectionPipeline:
+    """Detectors that inspect what the client sends (OWASP LLM01)."""
+    from app.detectors.classifier import InjectionClassifier
+    from app.detectors.rules import (
+        EncodedPayloadDetector,
+        ObfuscationDetector,
+        RuleDetector,
+    )
 
-    Phase 0 runs an empty pipeline -- a real proxy with the seams in place. Phase 1
-    registers the injection detectors here, Phase 2 the leakage detectors.
+    return DetectionPipeline(
+        [
+            RuleDetector(),
+            ObfuscationDetector(),
+            EncodedPayloadDetector(),
+            InjectionClassifier(),
+        ]
+    )
+
+
+def build_outbound_pipeline() -> DetectionPipeline:
+    """Detectors that inspect what the model returns (OWASP LLM06).
+
+    Registered in Phase 2; the seam is here so the gateway already runs both
+    directions through the same machinery.
     """
     return DetectionPipeline([])
 
 
-inbound_pipeline = build_pipeline()
-outbound_pipeline = build_pipeline()
+inbound_pipeline = build_inbound_pipeline()
+outbound_pipeline = build_outbound_pipeline()
 
 
 def inspection_context(

@@ -26,22 +26,41 @@ INVISIBLE = dict.fromkeys(
         0x200F,  # right-to-left mark
         0x2060,  # word joiner
         0xFEFF,  # zero-width no-break space
+        *range(0x202A, 0x202F),  # bidi embedding/override
+        *range(0x2066, 0x206A),  # bidi isolates
     ]
-    + list(range(0x202A, 0x202F))  # bidi embedding/override
-    + list(range(0x2066, 0x206A))  # bidi isolates
 )
 
 # Cyrillic/Greek lookalikes that render identically to Latin in most fonts.
 HOMOGLYPHS = str.maketrans(
     {
-        "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x",
-        "і": "i", "ѕ": "s", "ԁ": "d", "һ": "h", "ӏ": "l", "ν": "v", "ο": "o",
-        "α": "a", "ρ": "p", "τ": "t", "ϲ": "c", "ѵ": "v", "ｅ": "e",
+        "а": "a",
+        "е": "e",
+        "о": "o",
+        "р": "p",
+        "с": "c",
+        "у": "y",
+        "х": "x",
+        "і": "i",
+        "ѕ": "s",
+        "ԁ": "d",
+        "һ": "h",
+        "ӏ": "l",
+        "ν": "v",
+        "ο": "o",
+        "α": "a",
+        "ρ": "p",
+        "τ": "t",
+        "ϲ": "c",
+        "ѵ": "v",
+        "ｅ": "e",
     }
 )
 
 # Applied only to the extra "aggressive" view, never to the text a human reads.
-LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"})
+LEET = str.maketrans(
+    {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"}
+)
 
 _WHITESPACE = re.compile(r"\s+")
 # "i g n o r e   a l l" -- single letters separated by spaces or punctuation.

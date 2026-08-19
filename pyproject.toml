@@ -20,3 +20,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]  # fixture keys and canaries are not real secrets
+# Homoglyph tables and evasion test cases must contain homoglyphs by definition.
+"app/detectors/normalize.py" = ["RUF001", "RUF003"]
+"tests/test_rules.py" = ["RUF001"]
+"training/*" = ["S311"]  # seeded shuffling is for reproducibility, not crypto
+"benchmark/*" = ["S311"]
