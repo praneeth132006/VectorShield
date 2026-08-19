@@ -24,4 +24,6 @@ ignore = [
 "app/detectors/normalize.py" = ["RUF001", "RUF003"]
 "tests/test_rules.py" = ["RUF001"]
 "training/*" = ["S311"]  # seeded shuffling is for reproducibility, not crypto
-"benchmark/*" = ["S311"]
+# The evasion suite must generate homoglyphs; blocking file I/O is fine in a
+# one-shot CLI script that has no event loop to starve.
+"benchmark/*" = ["S311", "RUF001", "ASYNC240"]

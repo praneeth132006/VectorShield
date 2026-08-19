@@ -115,10 +115,14 @@ class InjectionClassifier(Detector):
         if probability is None or probability < MIN_REPORTABLE_PROBABILITY:
             return []
 
-        # The model is a corroborating opinion, not an oracle. Severity is capped
-        # at HIGH so a classifier hit alone cannot block without the rule layer
-        # or a second signal agreeing.
-        severity = Severity.HIGH if probability >= 0.85 else Severity.MEDIUM
+        # predict_proba is calibrated, so the probability *is* the confidence.
+        # Applying a severity discount on top of it would double-count the
+        # uncertainty and silence the model at exactly the probabilities where
+        # its opinion matters. Severity is therefore fixed at HIGH, whose weight
+        # (0.85) is below 1.0 -- which means the model alone can reach the flag
+        # line but never the block line, no matter how certain it is. Blocking
+        # still requires the rule layer, or a second detector, to agree.
+        severity = Severity.HIGH
 
         return [
             Finding(

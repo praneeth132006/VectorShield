@@ -130,8 +130,11 @@ def main() -> None:
     parser.add_argument(
         "--sources",
         nargs="+",
-        default=["seed", "deepset", "jailbreakbench"],
-        help="datasets to train on (use 'seed' alone to run fully offline)",
+        default=["seed", "deepset"],
+        help=(
+            "datasets to train on (use 'seed' alone to run fully offline; "
+            "'jailbreakbench' measures harmful content, not injection)"
+        ),
     )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--test-size", type=float, default=0.25)

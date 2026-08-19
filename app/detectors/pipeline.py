@@ -12,6 +12,7 @@ import logging
 import time
 
 from app.detectors.base import Detector, InspectionContext
+from app.detectors.triage import triage
 from app.models.schemas import Direction, Finding, Verdict
 from app.policy.engine import decide, score
 from app.policy.keys import Policy
@@ -71,9 +72,21 @@ class DetectionPipeline:
             findings.extend(await self._run(detectors, ctx))
 
             current = score(findings)
-            # Confident either way -> stop paying for deeper stages.
-            if current >= policy.block_threshold or current < policy.flag_threshold:
+
+            # Confident block: deeper stages cannot change the outcome.
+            if current >= policy.block_threshold:
                 break
+
+            # Below the flag line the cheap layer has no opinion -- and rule
+            # silence is not evidence of innocence, since stage 0 is
+            # high-precision and low-recall. Triage decides whether the input
+            # is worth an expensive look, so ordinary product traffic stops
+            # here while anything discussing the assistant escalates.
+            if current < policy.flag_threshold:
+                verdict = triage(ctx.text)
+                if not verdict.escalate:
+                    break
+                stages_run.append(f"triage:{verdict.summary}")
 
         latency_ms = (time.perf_counter() - started) * 1000
         return decide(

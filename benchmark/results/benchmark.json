@@ -1,0 +1,92 @@
+{
+  "generated_at": "2026-08-19T17:18:47Z",
+  "held_out": {
+    "sources": "deepset/prompt-injections, vectorshield/seed",
+    "blocked_only": {
+      "precision": 1.0,
+      "recall": 0.1625,
+      "f1": 0.2796,
+      "false_positive_rate": 0.0,
+      "counts": {
+        "tp": 13,
+        "fp": 0,
+        "tn": 114,
+        "fn": 67
+      }
+    },
+    "blocked_or_flagged": {
+      "precision": 0.9615,
+      "recall": 0.625,
+      "f1": 0.7576,
+      "false_positive_rate": 0.0175,
+      "counts": {
+        "tp": 50,
+        "fp": 2,
+        "tn": 112,
+        "fn": 30
+      }
+    },
+    "n": 194,
+    "stage1_escalation_rate": 0.2423,
+    "pipeline_ms_mean": 0.598,
+    "pipeline_ms_p95": 1.785
+  },
+  "evasion": {
+    "none (plain text)": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "zero-width padding": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "letter spacing": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "punctuation splitting": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "leetspeak": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "homoglyphs": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "base64 payload": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "rot13": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    }
+  },
+  "latency": {
+    "rounds": 200,
+    "mean_ms": 0.7114,
+    "median_ms": 0.2231,
+    "p95_ms": 2.0247,
+    "p99_ms": 2.5352,
+    "max_ms": 2.5602
+  }
+}

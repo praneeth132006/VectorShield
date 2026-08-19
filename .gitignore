@@ -33,8 +33,12 @@ htmlcov/
 *.pkl
 training/data/*
 !training/data/.gitkeep
+# The published run is committed so the README's numbers are auditable; ad-hoc
+# runs are not.
 benchmark/results/*
 !benchmark/results/.gitkeep
+!benchmark/results/benchmark.md
+!benchmark/results/benchmark.json
 
 # OS / editor
 .DS_Store

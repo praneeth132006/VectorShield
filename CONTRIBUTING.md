@@ -44,7 +44,7 @@ severity, and `app/policy/engine.py` turns findings into a decision.
 | Stage | Cost budget | What belongs here |
 |---|---|---|
 | `0` | microseconds | Regex, keyword, encoding and structural checks. Runs on **every** request. |
-| `1` | ~10ms | The TF-IDF/LogReg classifier. Runs only when stage 0 is ambiguous. |
+| `1` | ~10ms | The TF-IDF/LogReg classifier. Runs only on requests triage marks as worth a deeper look (~24% of traffic). |
 | `2` | ~100ms | Embedding similarity, LLM-as-judge. Runs only when stage 1 is still ambiguous. |
 
 **Putting an expensive check at stage 0 will be rejected in review.** The whole
@@ -86,11 +86,26 @@ Rules for detectors:
 - **Set `evidence`** to the exact matched substring when you can — it is what makes outbound redaction possible.
 - **Localize with `span`** when the match has a position.
 
-### 3. Register it
+### 3. If your rule needs escalation, edit triage instead
 
-Add it in `build_pipeline()` in `app/detectors/pipeline.py`.
+A stage 1 or stage 2 detector only sees a request if
+[`app/detectors/triage.py`](app/detectors/triage.py) decided the request was worth a deeper
+look. If you are adding an attack family that the cheap rules cannot match — subtle indirect
+injection, a new language, an unfamiliar structure — the change probably belongs in triage,
+not in a new stage 0 rule.
 
-### 4. Test it — including the false positives
+Triage plays by inverted rules: it is *supposed* to over-trigger, and its precision does not
+matter, because everything it selects is judged by a real detector afterwards. What does matter:
+
+- **Cost.** It runs on every request. Keep it to plain regex over the normalized text.
+- **Ordinary traffic.** Every term you add is checked against `ORDINARY` in `tests/test_triage.py`. Generic words fail here for good reason — bare `policy` was removed because "what is your return policy?" is the single most common support question there is.
+
+### 4. Register it
+
+Add it in `build_inbound_pipeline()` (or `build_outbound_pipeline()`) in
+`app/detectors/pipeline.py`.
+
+### 5. Test it — including the false positives
 
 Every new detector needs three kinds of test:
 
@@ -100,6 +115,17 @@ Every new detector needs three kinds of test:
 
 A detector that raises the false-positive rate on the benchmark suite will not be
 merged, however many attacks it catches.
+
+### 6. Show the benchmark delta
+
+Run it before and after your change and put both in the PR:
+
+```bash
+python -m benchmark.run_benchmark
+```
+
+If your change also touches training, retrain first (`python -m training.train_classifier`)
+and say which datasets you used. Only public datasets — no proprietary data, ever.
 
 ## Reporting a vulnerability
 

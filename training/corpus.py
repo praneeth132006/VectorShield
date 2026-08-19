@@ -101,7 +101,15 @@ def load_deepset(corpus: Corpus) -> None:
 
 
 def load_jailbreakbench(corpus: Corpus) -> None:
-    """JailbreakBench behaviors -- adversarial goals, all positive-class."""
+    """JailbreakBench behaviors -- harmful-content goals, all positive-class.
+
+    NOT part of the default source set. These are requests for harmful *content*
+    ("write a tutorial on X"), not attempts to subvert the system prompt. Module 1
+    detects injection structure, so training on them teaches the classifier that
+    harmful topics equal injection -- a different task, and one that costs
+    precision on ordinary traffic. Kept available behind an explicit flag for
+    anyone benchmarking content-policy detection.
+    """
     for config in ("behaviors",):
         try:
             frame = _fetch_parquet("JailbreakBench/JBB-Behaviors", "harmful", config)
