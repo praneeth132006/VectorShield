@@ -1,0 +1,9 @@
+# Ops dashboard only (Phase 5). The gateway does not import these, so a
+# deployment that does not run the dashboard does not install them.
+-r requirements.txt
+
+streamlit>=1.40,<2.0
+pandas>=2.2
+# Sync Postgres driver. The gateway talks asyncpg; the dashboard is a plain
+# script with no event loop, so it reads through psycopg instead.
+psycopg[binary]>=3.2 ; platform_python_implementation == "CPython"

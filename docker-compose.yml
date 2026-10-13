@@ -10,13 +10,33 @@ services:
       - .env
     environment:
       REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: sqlite+aiosqlite:////data/vectorshield.db
       # Reach an Ollama running on the host machine, not inside the container.
       OLLAMA_BASE_URL: http://host.docker.internal:11434
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - gateway-data:/data
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Read-only ops dashboard. Shares the gateway's database file, so it keeps
+  # working even when the gateway is down -- which is exactly when an operator
+  # wants to look at it.
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - gateway-data:/data
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////data/vectorshield.db
     restart: unless-stopped
 
   redis:
@@ -27,3 +47,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+volumes:
+  # Shared so the dashboard can read what the gateway writes. Swap both
+  # services to a DATABASE_URL pointing at Postgres for a real deployment.
+  gateway-data:

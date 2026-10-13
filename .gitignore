@@ -44,3 +44,6 @@ benchmark/results/*
 .DS_Store
 .idea/
 .vscode/
+
+# Local agent/editor session config
+.claude/

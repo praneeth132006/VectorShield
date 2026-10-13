@@ -1,0 +1,20 @@
+# Ops dashboard, built separately from the gateway so a deployment that does
+# not run it does not carry Streamlit and pandas in the gateway image.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements-dashboard.txt ./
+RUN pip install --no-cache-dir -r requirements-dashboard.txt
+
+COPY app ./app
+COPY dashboard ./dashboard
+
+EXPOSE 8501
+
+# Read-only against the gateway's database; it never needs the gateway itself.
+CMD ["streamlit", "run", "dashboard/ops.py", \
+     "--server.port", "8501", \
+     "--server.address", "0.0.0.0", \
+     "--server.headless", "true", \
+     "--browser.gatherUsageStats", "false"]

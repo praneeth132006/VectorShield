@@ -191,6 +191,11 @@ class TenantCreate(BaseModel):
     rate_limit_rpm: int | None = None
     block_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     flag_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    # LLM04 resource limits. Omit for the global default; 0 disables the limit
+    # for this tenant, which is a real choice for a trusted internal tool.
+    rate_limit_tpm: int | None = Field(default=None, ge=0)
+    max_prompt_chars: int | None = Field(default=None, ge=0)
+    max_output_tokens: int | None = Field(default=None, ge=0)
 
 
 class TenantPublic(BaseModel):
@@ -199,6 +204,9 @@ class TenantPublic(BaseModel):
     created_at: datetime
     fail_mode: str
     rate_limit_rpm: int
+    rate_limit_tpm: int
+    max_prompt_chars: int
+    max_output_tokens: int
     block_threshold: float
     flag_threshold: float
     has_system_prompt: bool

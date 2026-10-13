@@ -39,6 +39,36 @@ class Settings(BaseSettings):
     rate_limit_requests_per_minute: int = 60
     rate_limit_tokens_per_minute: int = 40_000
 
+    # --- Abuse / DoS hardening (LLM04) -----------------------------------
+    # Request-shape caps, refused before any detector or upstream call runs.
+    # A single request can exhaust a token budget without ever tripping a
+    # per-minute request count, so size is capped independently of rate.
+    max_prompt_chars: int = 48_000
+    max_messages: int = 200
+    # Ceiling on what a client may ask the model to generate. A request for
+    # 100k completion tokens is a cost attack whatever its text says.
+    max_output_tokens: int = 4_096
+    # What a reply is *assumed* to cost when the client names no max_tokens.
+    # Reserving the full ceiling instead would make the token budget bind far
+    # tighter than the request limit it sits beside -- at the defaults above,
+    # ~9 requests a minute against an advertised 60 -- for replies that are
+    # usually a fraction of the ceiling. Reserve the likely cost, then correct
+    # it from the provider's real usage once the answer exists.
+    expected_completion_tokens: int = 512
+    # Content-shaped DoS detection: repetition bombs, unbounded-output
+    # requests. Reports findings like any other detector; it does not enforce.
+    detect_resource_abuse: bool = True
+
+    # --- Extraction detection (LLM10) ------------------------------------
+    # Behavioral, so it needs per-tenant request history. The store is
+    # in-process: a multi-worker deployment sees each worker's slice of the
+    # traffic, which lowers recall but never invents a detection.
+    detect_extraction: bool = True
+    extraction_window_seconds: int = 600
+    # How many recent prompt fingerprints to keep per tenant. Bounded so a
+    # busy tenant cannot grow the profile store without limit.
+    extraction_history: int = 256
+
     # --- Upstream providers ----------------------------------------------
     default_provider: Literal["openai", "ollama"] = "ollama"
     openai_api_key: str | None = None
@@ -62,6 +92,14 @@ class Settings(BaseSettings):
     # Gateway-owned system prompt + canary (protects a tenant's instructions).
     inject_system_prompt: bool = True
     canary_enabled: bool = True
+
+    # --- Outbound scanning (LLM06) ---------------------------------------
+    # Response inspection: secrets, personal data, canary and system-prompt
+    # leakage. Turning it off leaves the inbound path untouched.
+    outbound_scanning: bool = True
+    # PII is the noisiest outbound signal -- a support bot legitimately prints
+    # email addresses. Disable it to keep only credential and canary checks.
+    detect_pii: bool = True
 
     # --- Auth ------------------------------------------------------------
     # Bootstrap key created on first startup when no tenants exist.

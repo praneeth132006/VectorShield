@@ -83,6 +83,11 @@ class DetectionPipeline:
             # is worth an expensive look, so ordinary product traffic stops
             # here while anything discussing the assistant escalates.
             if current < policy.flag_threshold:
+                # Triage exists to decide whether a *prompt* deserves the
+                # classifier. Outbound has no stage 1, so there is nothing to
+                # escalate to and nothing to pay for.
+                if ctx.direction is not Direction.INBOUND:
+                    break
                 verdict = triage(ctx.text)
                 if not verdict.escalate:
                     break
@@ -99,8 +104,16 @@ class DetectionPipeline:
 
 
 def build_inbound_pipeline() -> DetectionPipeline:
-    """Detectors that inspect what the client sends (OWASP LLM01)."""
+    """Detectors that inspect what the client sends.
+
+    Covers LLM01 (injection), the content-shaped half of LLM04 (requests built
+    to cost more than they look -- the volume half is enforced as a hard limit
+    in `app/ratelimit/quota.py`, not detected here), and LLM10 (extraction
+    patterns across requests).
+    """
+    from app.detectors.abuse import ResourceAbuseDetector
     from app.detectors.classifier import InjectionClassifier
+    from app.detectors.extraction import ExtractionDetector
     from app.detectors.rules import (
         EncodedPayloadDetector,
         ObfuscationDetector,
@@ -112,6 +125,8 @@ def build_inbound_pipeline() -> DetectionPipeline:
             RuleDetector(),
             ObfuscationDetector(),
             EncodedPayloadDetector(),
+            ResourceAbuseDetector(),
+            ExtractionDetector(),
             InjectionClassifier(),
         ]
     )
@@ -120,10 +135,31 @@ def build_inbound_pipeline() -> DetectionPipeline:
 def build_outbound_pipeline() -> DetectionPipeline:
     """Detectors that inspect what the model returns (OWASP LLM06).
 
-    Registered in Phase 2; the seam is here so the gateway already runs both
-    directions through the same machinery.
+    All of these are stage 0: a response is inspected on the way to a user who
+    is already waiting, so there is no budget for a model here. Structure --
+    key shapes, checksums, a random canary, shingle overlap -- carries the
+    confidence instead.
     """
-    return DetectionPipeline([])
+    from app.config import settings as _settings
+
+    if not _settings.outbound_scanning:
+        return DetectionPipeline([])
+
+    from app.detectors.leakage import (
+        CanaryDetector,
+        PIIDetector,
+        SecretDetector,
+        SystemPromptLeakDetector,
+    )
+
+    return DetectionPipeline(
+        [
+            CanaryDetector(),
+            SecretDetector(),
+            SystemPromptLeakDetector(),
+            PIIDetector(),
+        ]
+    )
 
 
 inbound_pipeline = build_inbound_pipeline()

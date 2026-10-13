@@ -3,7 +3,7 @@
     python -m benchmark.run_benchmark
     python -m benchmark.run_benchmark --sources seed --no-latency
 
-Three things are measured:
+Six things are measured:
 
 1. **Detection quality** on the held-out split of the public datasets. The
    classifier was trained on this corpus, so the split is reconstructed with the
@@ -11,8 +11,21 @@ Three things are measured:
    else would be reporting training accuracy.
 2. **Evasion robustness** -- a fixed set of attacks rewritten with each known
    obfuscation technique, reported per technique.
-3. **Latency overhead** -- what the gateway costs on top of a plain proxy call,
+3. **Outbound leakage** (LLM06) on this repo's own response corpus. There is no
+   public dataset for this, so the number to read is the false-positive rate:
+   ordinary support answers that the scanner rewrote anyway.
+4. **Resource abuse** (LLM04) on this repo's own corpus of cost-shaped
+   requests, scored against verbose-but-legitimate traffic.
+5. **Extraction** (LLM10) over whole *sessions* rather than single requests,
+   since a lone prompt cannot be extraction. Probing sessions are scored
+   against realistic repetitive ones.
+6. **Latency overhead** -- what the gateway costs on top of a plain proxy call,
    and how often traffic escalates past the cheap stage.
+
+Sections 3, 4, and 5 run on corpora written by this project. Their recall is a
+regression check, not a claim about the wild; their false-positive rate is the
+number that means something, because those are realistic requests and a
+gateway that refuses them is one an operator turns off.
 """
 
 from __future__ import annotations
@@ -29,9 +42,21 @@ from pathlib import Path
 
 from sklearn.model_selection import train_test_split
 
-from app.detectors.pipeline import build_inbound_pipeline, inspection_context
-from app.models.schemas import Decision, Direction
+from app.detectors.base import InspectionContext
+from app.detectors.pipeline import (
+    build_inbound_pipeline,
+    build_outbound_pipeline,
+    inspection_context,
+)
+from app.models.schemas import Decision, Direction, OwaspCategory
 from app.policy.keys import Policy
+from benchmark.abuse_cases import (
+    ABUSIVE,
+    BENIGN_LOAD,
+    EXTRACTION_SESSIONS,
+    ORDINARY_SESSIONS,
+)
+from benchmark.leakage_cases import BENIGN, CANARY, LEAKY, SYSTEM_PROMPT
 from training.corpus import load_corpus
 
 RESULTS_DIR = Path("benchmark/results")
@@ -46,6 +71,19 @@ POLICY = Policy(
     store_content=False,
     system_prompt=None,
     canary_token=None,
+)
+
+# Outbound needs a tenant that actually has instructions to leak.
+LEAK_POLICY = Policy(
+    tenant_id="benchmark",
+    tenant_name="benchmark",
+    fail_mode="open",
+    block_threshold=0.85,
+    flag_threshold=0.45,
+    rate_limit_rpm=10_000,
+    store_content=False,
+    system_prompt=SYSTEM_PROMPT,
+    canary_token=CANARY,
 )
 
 # Attacks used for the evasion table. Each is rewritten with every technique.
@@ -192,6 +230,157 @@ async def detection_quality(
     return strict, lenient, stats
 
 
+async def leakage_quality(pipeline) -> dict:
+    """Score the outbound pipeline on this repo's labelled response corpus.
+
+    "Detected" means the gateway did not pass the response through untouched --
+    a redaction counts, since the secret is gone either way. Per-category
+    recall is reported alongside the totals so a single weak family (IBANs,
+    say) cannot hide inside a good average.
+    """
+    scores = Scores()
+    by_category: dict[str, dict[str, int]] = {}
+    latencies: list[float] = []
+    missed: list[str] = []
+    false_positives: list[str] = []
+
+    for category, text in LEAKY:
+        verdict = await pipeline.inspect(
+            inspection_context(text, Direction.OUTBOUND, LEAK_POLICY), LEAK_POLICY
+        )
+        latencies.append(verdict.latency_ms)
+        detected = _flagged(verdict.decision)
+        bucket = by_category.setdefault(category, {"detected": 0, "total": 0})
+        bucket["total"] += 1
+        bucket["detected"] += int(detected)
+        if detected:
+            scores.tp += 1
+        else:
+            scores.fn += 1
+            missed.append(text[:120])
+
+    for text in BENIGN:
+        verdict = await pipeline.inspect(
+            inspection_context(text, Direction.OUTBOUND, LEAK_POLICY), LEAK_POLICY
+        )
+        latencies.append(verdict.latency_ms)
+        if _flagged(verdict.decision):
+            scores.fp += 1
+            false_positives.append(text[:120])
+        else:
+            scores.tn += 1
+
+    return {
+        **scores.as_dict(),
+        "n": len(LEAKY) + len(BENIGN),
+        "by_category": by_category,
+        "missed": missed,
+        "false_positives": false_positives,
+        "pipeline_ms_mean": round(statistics.mean(latencies), 4) if latencies else 0.0,
+    }
+
+
+async def abuse_quality(pipeline) -> dict:
+    """Score LLM04 content-shaped abuse detection.
+
+    "Detected" means the request produced an LLM04 finding at all. Most of
+    these deliberately land in the flag band rather than the block band -- a
+    long-document request is a real thing to ask for -- so counting blocks
+    here would measure the Decision Engine's thresholds instead of the
+    detector's reach.
+    """
+    scores = Scores()
+    by_category: dict[str, dict[str, int]] = {}
+    false_positives: list[str] = []
+    missed: list[str] = []
+
+    def has_llm04(verdict) -> bool:
+        return any(f.category is OwaspCategory.LLM04_MODEL_DOS for f in verdict.findings)
+
+    for category, text in ABUSIVE:
+        verdict = await _inspect(pipeline, text)
+        detected = has_llm04(verdict)
+        bucket = by_category.setdefault(category, {"detected": 0, "total": 0})
+        bucket["total"] += 1
+        bucket["detected"] += int(detected)
+        if detected:
+            scores.tp += 1
+        else:
+            scores.fn += 1
+            missed.append(text[:120])
+
+    for text in BENIGN_LOAD:
+        verdict = await _inspect(pipeline, text)
+        if has_llm04(verdict):
+            scores.fp += 1
+            false_positives.append(text[:120])
+        else:
+            scores.tn += 1
+
+    return {
+        **scores.as_dict(),
+        "n": len(ABUSIVE) + len(BENIGN_LOAD),
+        "by_category": by_category,
+        "missed": missed,
+        "false_positives": false_positives,
+    }
+
+
+async def extraction_quality() -> dict:
+    """Score LLM10 over sessions, not single requests.
+
+    Extraction has no signature inside one prompt, so the unit here is an
+    ordered run of prompts from one tenant. A session counts as detected if
+    any request in it produced an LLM10 finding. Each session gets a fresh
+    tenant id so one scenario cannot contaminate the next.
+    """
+    from app.detectors.extraction import ExtractionDetector, ProfileStore
+
+    scores = Scores()
+    by_scenario: dict[str, dict[str, int]] = {}
+    false_positives: list[str] = []
+    first_hit: dict[str, int] = {}
+
+    async def run(name: str, prompts: list[str], malicious: bool) -> bool:
+        detector = ExtractionDetector(ProfileStore())
+        tenant = f"bench-{name}"
+        hit_at = None
+        for index, prompt in enumerate(prompts, start=1):
+            findings = await detector.inspect(
+                InspectionContext(text=prompt, direction=Direction.INBOUND, tenant_id=tenant)
+            )
+            if findings and hit_at is None:
+                hit_at = index
+        if malicious and hit_at is not None:
+            first_hit[name] = hit_at
+        return hit_at is not None
+
+    for name, prompts in EXTRACTION_SESSIONS:
+        detected = await run(name, prompts, malicious=True)
+        by_scenario[name] = {
+            "detected": int(detected),
+            "total": 1,
+            "requests": len(prompts),
+            "detected_after": first_hit.get(name, 0),
+        }
+        scores.tp += int(detected)
+        scores.fn += int(not detected)
+
+    for name, prompts in ORDINARY_SESSIONS:
+        if await run(name, prompts, malicious=False):
+            scores.fp += 1
+            false_positives.append(name)
+        else:
+            scores.tn += 1
+
+    return {
+        **scores.as_dict(),
+        "sessions": len(EXTRACTION_SESSIONS) + len(ORDINARY_SESSIONS),
+        "by_scenario": by_scenario,
+        "false_positives": false_positives,
+    }
+
+
 async def evasion_robustness(pipeline) -> dict[str, dict]:
     results: dict[str, dict] = {}
     for label, transform in EVASIONS.items():
@@ -278,6 +467,93 @@ def render_markdown(report: dict) -> str:
             ["Obfuscation", "Detected", "Blocked"],
         ),
         "",
+        "### Outbound leakage (LLM06)",
+        "",
+        f"This repo's own response corpus ({report['leakage']['n']} model answers, "
+        "self-authored -- there is no public equivalent). A redaction counts as a "
+        "detection.",
+        "",
+        _table(
+            [
+                [
+                    f"{report['leakage']['precision']:.3f}",
+                    f"{report['leakage']['recall']:.3f}",
+                    f"{report['leakage']['f1']:.3f}",
+                    f"{report['leakage']['false_positive_rate']:.3f}",
+                ]
+            ],
+            ["Precision", "Recall", "F1", "False-positive rate"],
+        ),
+        "",
+        _table(
+            [
+                [category, f"{r['detected']}/{r['total']}"]
+                for category, r in sorted(report["leakage"]["by_category"].items())
+            ],
+            ["Leak type", "Detected"],
+        ),
+        "",
+        "### Resource abuse (LLM04)",
+        "",
+        f"This repo's own corpus ({report['abuse']['n']} requests, self-authored): "
+        f"{len(ABUSIVE)} shaped to cost more than they look, against "
+        f"{len(BENIGN_LOAD)} verbose but legitimate ones. A finding of any "
+        "confidence counts as a detection, since most of these are designed to "
+        "flag rather than block.",
+        "",
+        _table(
+            [
+                [
+                    f"{report['abuse']['precision']:.3f}",
+                    f"{report['abuse']['recall']:.3f}",
+                    f"{report['abuse']['f1']:.3f}",
+                    f"{report['abuse']['false_positive_rate']:.3f}",
+                ]
+            ],
+            ["Precision", "Recall", "F1", "False-positive rate"],
+        ),
+        "",
+        _table(
+            [
+                [category, f"{r['detected']}/{r['total']}"]
+                for category, r in sorted(report["abuse"]["by_category"].items())
+            ],
+            ["Abuse shape", "Detected"],
+        ),
+        "",
+        "### Extraction (LLM10)",
+        "",
+        f"Scored over whole sessions ({report['extraction']['sessions']} of them), "
+        "because a single prompt cannot be extraction. A session counts as "
+        "detected if any request in it produced an LLM10 finding. The ordinary "
+        "sessions are deliberately repetitive -- a support queue and a batch job "
+        "repeat themselves constantly, and neither is theft.",
+        "",
+        _table(
+            [
+                [
+                    f"{report['extraction']['precision']:.3f}",
+                    f"{report['extraction']['recall']:.3f}",
+                    f"{report['extraction']['f1']:.3f}",
+                    f"{report['extraction']['false_positive_rate']:.3f}",
+                ]
+            ],
+            ["Precision", "Recall", "F1", "False-positive rate"],
+        ),
+        "",
+        _table(
+            [
+                [
+                    scenario,
+                    "yes" if r["detected"] else "no",
+                    str(r["requests"]),
+                    str(r["detected_after"] or "-"),
+                ]
+                for scenario, r in sorted(report["extraction"]["by_scenario"].items())
+            ],
+            ["Probing session", "Detected", "Requests", "Caught at request #"],
+        ),
+        "",
         "### Latency overhead",
         "",
         f"Gateway cost per request, excluding the upstream model call "
@@ -316,6 +592,8 @@ async def main_async(args: argparse.Namespace) -> None:
 
     pipeline = build_inbound_pipeline()
     await pipeline.warmup()
+    outbound = build_outbound_pipeline()
+    await outbound.warmup()
 
     strict, lenient, stats = await detection_quality(pipeline, x_test, y_test)
     report = {
@@ -327,6 +605,9 @@ async def main_async(args: argparse.Namespace) -> None:
             **stats,
         },
         "evasion": await evasion_robustness(pipeline),
+        "leakage": await leakage_quality(outbound),
+        "abuse": await abuse_quality(pipeline),
+        "extraction": await extraction_quality(),
         "latency": (
             await latency_profile(pipeline, x_test[:50] or ["hello"])
             if not args.no_latency
