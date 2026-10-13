@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Decision(StrEnum):
@@ -191,6 +191,16 @@ class TenantCreate(BaseModel):
     rate_limit_rpm: int | None = None
     block_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     flag_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _check_thresholds(self) -> TenantCreate:
+        if (
+            self.flag_threshold is not None
+            and self.block_threshold is not None
+            and self.flag_threshold > self.block_threshold
+        ):
+            raise ValueError("flag_threshold must be <= block_threshold")
+        return self
 
 
 class TenantPublic(BaseModel):

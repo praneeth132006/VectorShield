@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 
 from app.detectors.base import Detector, InspectionContext
+from app.detectors.leakage import CanaryLeakDetector
+from app.detectors.ml import TfidfInjectionDetector
+from app.detectors.rules import InjectionRulesDetector
 from app.models.schemas import Direction, Finding, Verdict
 from app.policy.engine import decide, score
 from app.policy.keys import Policy
@@ -44,9 +48,7 @@ class DetectionPipeline:
     async def _run(self, detectors: list[Detector], ctx: InspectionContext) -> list[Finding]:
         if not detectors:
             return []
-        results = await asyncio.gather(
-            *(d.inspect(ctx) for d in detectors), return_exceptions=True
-        )
+        results = await asyncio.gather(*(d.inspect(ctx) for d in detectors), return_exceptions=True)
         findings: list[Finding] = []
         for detector, result in zip(detectors, results, strict=True):
             if isinstance(result, BaseException):
@@ -56,9 +58,7 @@ class DetectionPipeline:
             findings.extend(result)
         return findings
 
-    async def inspect(
-        self, ctx: InspectionContext, policy: Policy, max_stage: int = 2
-    ) -> Verdict:
+    async def inspect(self, ctx: InspectionContext, policy: Policy, max_stage: int = 2) -> Verdict:
         started = time.perf_counter()
         findings: list[Finding] = []
         stages_run: list[str] = []
@@ -86,16 +86,30 @@ class DetectionPipeline:
 
 
 def build_pipeline() -> DetectionPipeline:
-    """Assemble the shipped detectors.
-
-    Phase 0 runs an empty pipeline -- a real proxy with the seams in place. Phase 1
-    registers the injection detectors here, Phase 2 the leakage detectors.
-    """
+    """An empty pipeline (the Phase 0 behaviour), kept for backwards compatibility."""
     return DetectionPipeline([])
 
 
-inbound_pipeline = build_pipeline()
-outbound_pipeline = build_pipeline()
+def _detectors_disabled() -> bool:
+    return os.getenv("VECTORSHIELD_DISABLE_DETECTORS", "").lower() in {"1", "true", "yes"}
+
+
+def build_inbound_pipeline() -> DetectionPipeline:
+    """Phase 1: stage-0 rules with the TF-IDF/LR classifier gated at stage 1."""
+    if _detectors_disabled():
+        return build_pipeline()
+    return DetectionPipeline([InjectionRulesDetector(), TfidfInjectionDetector()])
+
+
+def build_outbound_pipeline() -> DetectionPipeline:
+    """Phase 2 (partial): canary-leak detection only."""
+    if _detectors_disabled():
+        return build_pipeline()
+    return DetectionPipeline([CanaryLeakDetector()])
+
+
+inbound_pipeline = build_inbound_pipeline()
+outbound_pipeline = build_outbound_pipeline()
 
 
 def inspection_context(

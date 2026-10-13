@@ -37,17 +37,14 @@ VectorShield is being built in phases. This is honest about what exists today:
 
 | Phase | Scope | Status |
 |---|---|---|
-| **0** | Real authenticated proxy, tenants + policy, decision engine, rate limiting, audit log | ✅ **shipped** |
-| **1** | Module 1 — prompt injection / jailbreak detection (LLM01) | 🚧 next |
-| **2** | Module 2 — data leakage & PII detection, canary verification (LLM06) | ⬜ planned |
-| **3** | Module 3 — DoS/abuse hardening, token-budget limits (LLM04) | ⬜ planned |
-| **4** | Module 4 — model extraction detection (LLM10) | ⬜ stretch |
-| **5** | Streamlit ops dashboard + published benchmark table | ⬜ planned |
+| **0** | Authenticated proxy, tenants + policy, decision engine, rate limiting, audit log | shipped |
+| **1** | Prompt injection / jailbreak detection (LLM01): regex rules + TF-IDF/Logistic Regression | implemented; see Training and evaluation |
+| **2** | Outbound canary-token leak detection and redaction (LLM06) | partial: canary only; no PII/secret detectors |
+| **3-5** | Token-budget limits, extraction detection, dashboard | not implemented; future work |
 
-**The detection pipeline currently ships with zero detectors registered.** Phase 0 is the
-proxy, the policy engine, and the seams the detectors plug into — everything is wired and
-tested, but a prompt-injection attempt is not yet caught. Benchmark numbers will be published
-in Phase 1 from a reproducible script; there are deliberately no invented figures here.
+The inbound pipeline runs stage-0 rules on every request and escalates ambiguous
+requests to the stage-1 `tfidf_lr` classifier. If `models/injection_clf.joblib` is
+missing, the classifier is disabled and the rules still run.
 
 ---
 
@@ -150,7 +147,7 @@ Brings up the gateway plus Redis. Your prompts never leave your infrastructure.
 
 | Route | Shape | Use it when |
 |---|---|---|
-| `POST /v1/chat/completions` | Byte-compatible with OpenAI | You have an existing app. Change `base_url`, change nothing else. |
+| `POST /v1/chat/completions` | OpenAI-compatible request/response shape | You have an existing app. Change `base_url`, change nothing else. |
 | `POST /v1/gateway/chat` | OpenAI request + a full `security` report | You want the risk score, the findings, the decision, and the latency overhead back with every call. |
 
 The native surface returns:
@@ -174,11 +171,10 @@ A blocked request returns **HTTP 403** with the same `security` block, so you al
 
 ## Design decisions
 
-**The ML classifier is never on the hot path.** Detectors declare a stage: stage 0 (regex,
-structural checks) runs on every request in microseconds; stage 1 (classifier) and stage 2
-(embeddings) run *only* when the accumulated risk lands in the ambiguous band between
-`FLAG_THRESHOLD` and `BLOCK_THRESHOLD`. Confident-clean and confident-malicious traffic both
-short-circuit. This is enforced by tests, not just convention.
+**Expensive checks only run on ambiguous traffic.** Stage 0 rules run on every request.
+The stage-1 TF-IDF classifier runs only when those rules put the request between
+`FLAG_THRESHOLD` and `BLOCK_THRESHOLD`; stage 2 remains available for heavier checks.
+Confident-clean and confident-malicious traffic short-circuit. This is enforced by tests.
 
 **Detectors report; the Decision Engine decides.** A detector returns findings with a
 confidence and a severity and nothing else. One place — `app/policy/engine.py` — turns those
@@ -219,6 +215,33 @@ list. The essentials:
 | `ADMIN_TOKEN` | *(empty)* | Empty disables the admin API entirely |
 
 ---
+
+## Training and evaluation
+
+The classifier is optional at runtime. To train it locally, install the training
+requirements and run the scripts below. Dataset preparation downloads datasets from
+Hugging Face; it is separate and not needed to run the gateway with rules only.
+
+```bash
+pip install -r requirements-train.txt
+python scripts/prepare_data.py
+python scripts/train_classifier.py
+python scripts/evaluate.py
+```
+
+The preparation script trains on the `train` split of
+`jackhhao/jailbreak-classification` and evaluates on its held-out `test` split plus
+`Lakera/gandalf_ignore_instructions` and hand-written benign support prompts. It stops on
+download, schema, or label errors instead of switching to fallback examples. Check dataset
+cards and licenses before use. The evaluation script writes `results/eval_results.md`; no
+results are published here until evaluation has actually been run.
+
+### Known limitations
+
+- Detection is English-centric; a TF-IDF model can miss semantic paraphrases.
+- Stage 1 cannot inspect requests that stage 0 scores as unambiguously safe.
+- Canary detection covers the planted canary only; PII, API-key, and secret detectors are not included.
+- Streaming, token-budget limits, and extraction detection are not implemented.
 
 ## Development
 

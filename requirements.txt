@@ -12,3 +12,6 @@ asyncpg>=0.30          # PostgreSQL (Supabase/Railway) in deployment
 
 # --- Rate limiting (optional at runtime: falls back to in-memory) ---
 redis>=5.2,<7.0
+
+# --- Inbound classifier (optional until a model is trained) ---
+scikit-learn>=1.5.2,<2.0
