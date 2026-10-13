@@ -105,6 +105,66 @@ matter, because everything it selects is judged by a real detector afterwards. W
 Add it in `build_inbound_pipeline()` (or `build_outbound_pipeline()`) in
 `app/detectors/pipeline.py`.
 
+### Adding an outbound signature instead
+
+Response scanning ([`app/detectors/leakage.py`](app/detectors/leakage.py)) has a
+lower ceiling and a higher bar. There is no stage 1 out here — the customer is
+already waiting on the answer — so confidence has to come from structure: a key
+shape, a checksum, a random canary, shingle overlap with the system prompt.
+
+Two rules specific to this direction:
+
+- **Report every occurrence, not just the first.** Put them all in
+  `metadata["matches"]`; that list is exactly what the gateway redacts. A finding
+  that reports one of forty leaked email addresses redacts one of forty.
+- **A shape that ordinary text also has needs corroboration.** `ddd-dd-dddd` is a
+  Social Security number *and* a warehouse bay number. Give the signature a
+  `context` pattern: with the surrounding words, it is a real finding; without
+  them, it drops to `uncorroborated_confidence` and only reaches the audit log.
+
+Prefer redaction to refusal. A finding only sets `metadata["unredactable"]` when
+removing the flagged spans would not actually contain the leak — today that is
+the canary alone, because the marker's presence means the surrounding text *is*
+the system prompt.
+
+### Adding a resource limit instead
+
+Before writing a detector, ask whether the thing you are checking has a
+judgement in it. "This prompt is 90,000 characters" and "this key has spent its
+minute's tokens" do not — they are facts with one correct answer, and they
+belong in [`app/ratelimit/quota.py`](app/ratelimit/quota.py) as a hard limit
+that refuses with a 413 or 429 before any detector runs. "This prompt looks like
+a repetition bomb" does have a judgement in it, so it belongs in
+[`app/detectors/abuse.py`](app/detectors/abuse.py) and goes through the normal
+detector contract.
+
+Getting this backwards is the common mistake. A limit expressed as a detector
+becomes a threshold someone has to tune; a judgement expressed as a limit
+becomes a hard refusal of traffic that was probably fine.
+
+If you add a limit, add it per tenant as well as globally — `None` inherits the
+default, `0` lifts it — and make sure both API surfaces enforce it. A cap you can
+dodge by switching from `/v1/gateway/chat` to `/v1/chat/completions` is not a cap,
+and `tests/test_abuse_e2e.py` has a test that says so.
+
+### Adding a behavioral signal instead
+
+[`app/detectors/extraction.py`](app/detectors/extraction.py) is the one detector
+that looks across requests rather than at one. If you add a signal there:
+
+- **Store a fingerprint, never the prompt.** The profile keeps a 64-bit SimHash
+  and a slot-blanked skeleton. A gateway that hashes prompts by default must not
+  keep a plaintext shadow copy of them in memory to do analysis on.
+- **Bound the state.** Per-tenant history is a `deque` with a `maxlen`. A busy
+  tenant must not be able to grow it without limit.
+- **Cap the confidence below the block band.** Volume is never certain about
+  intent — repetition is what a batch classification workload looks like. These
+  signals flag; they do not block, and `test_extraction_findings_never_reach_the_block_band`
+  enforces it.
+- **Calibrate against repetitive benign traffic, not just against attacks.** The
+  near-duplicate threshold in that module is a measured number with its
+  derivation written down, not a guess. If you change it, re-measure and say so.
+
 ### 5. Test it — including the false positives
 
 Every new detector needs three kinds of test:
@@ -112,6 +172,10 @@ Every new detector needs three kinds of test:
 1. **True positives** — the attacks it should catch.
 2. **False positives** — realistic, benign prompts it must *not* fire on. This is the test reviewers read first.
 3. **Stage discipline** — proof it does not escalate traffic it should have settled cheaply (see `tests/test_pipeline.py`).
+
+For a behavioral signal, the false-positive test is a whole *session* of
+realistic repetitive traffic, not a single prompt — a support queue asking the
+same twenty questions all day has to pass clean.
 
 A detector that raises the false-positive rate on the benchmark suite will not be
 merged, however many attacks it catches.
@@ -126,6 +190,20 @@ python -m benchmark.run_benchmark
 
 If your change also touches training, retrain first (`python -m training.train_classifier`)
 and say which datasets you used. Only public datasets — no proprietary data, ever.
+
+Watch the latency table as well as the detection ones. Every stage 0 detector is
+paid for on every single request: adding the LLM04 and LLM10 detectors roughly
+doubled median overhead, which was worth it and was reported rather than quietly
+absorbed. Do the same.
+
+### Changing the dashboard
+
+The query layer is [`dashboard/data.py`](dashboard/data.py) and it is tested;
+[`dashboard/ops.py`](dashboard/ops.py) is rendering only. Put aggregation in the
+former so a chart cannot quietly disagree with the query behind it, and keep
+reads working on both SQLite and Postgres — `date_trunc` and percentile
+functions exist on one and not the other, which is why bucketing and percentiles
+are done in Python.
 
 ## Reporting a vulnerability
 

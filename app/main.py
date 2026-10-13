@@ -44,6 +44,7 @@ from app.policy.keys import (
     require_tenant,
 )
 from app.proxy.llm_client import PROVIDERS, UpstreamError, pool
+from app.ratelimit import quota
 from app.ratelimit.limiter import limiter
 
 logging.basicConfig(level=settings.log_level.upper())
@@ -124,6 +125,30 @@ async def _upstream_error_handler(_: Request, exc: UpstreamError) -> JSONRespons
     )
 
 
+@app.exception_handler(quota.QuotaExceeded)
+async def _quota_handler(_: Request, exc: quota.QuotaExceeded) -> JSONResponse:
+    """Resource limits refused the request (LLM04).
+
+    Distinct from a 403: nothing about the content was judged risky, the
+    request simply asked for more than it is allowed. The scope says which
+    limit, so a client can tell "slow down" from "send less".
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "message": exc.message,
+                "type": "vectorshield_quota_exceeded",
+                "code": exc.scope,
+                "limit": exc.limit,
+                "observed": exc.observed,
+                "retry_after": exc.retry_after or None,
+            }
+        },
+        headers=exc.headers(),
+    )
+
+
 @app.exception_handler(RequestBlocked)
 async def _blocked_handler(_: Request, exc: RequestBlocked) -> JSONResponse:
     return JSONResponse(
@@ -149,23 +174,17 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-async def _enforce_rate_limit(request: Request, policy: Policy) -> None:
+async def _enforce_quota(
+    request: Request, policy: Policy, body: ChatCompletionRequest
+) -> quota.QuotaGrant:
+    """Hard resource limits (LLM04), before any detector or upstream call.
+
+    Raises QuotaExceeded, which the handler below turns into 413/429.
+    """
     key = policy.tenant_id or _client_ip(request) or "anonymous"
-    result = await limiter.check(key, policy.rate_limit_rpm)
-    if not result.allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                f"Rate limit exceeded ({result.limit} requests/min). "
-                f"Penalty level: {result.penalty}."
-            ),
-            headers={
-                "Retry-After": str(result.retry_after),
-                "X-RateLimit-Limit": str(result.limit),
-                "X-RateLimit-Remaining": "0",
-                "X-VectorShield-Penalty": result.penalty,
-            },
-        )
+    return await quota.enforce(
+        body.messages, policy, key=key, requested_max_tokens=body.max_tokens
+    )
 
 
 # --------------------------------------------------------------------------
@@ -214,13 +233,14 @@ async def chat_completions(
                 "before they reach the client. Set stream=false."
             ),
         )
-    await _enforce_rate_limit(request, policy)
+    grant = await _enforce_quota(request, policy, body)
     result = await process_chat(
         GatewayChatRequest(**body.model_dump()),
         policy,
         session,
         client_ip=_client_ip(request),
         route="/v1/chat/completions",
+        grant=grant,
     )
     assert result.completion is not None
     return result.completion
@@ -239,19 +259,50 @@ async def gateway_chat(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Streaming is not supported yet. Set stream=false.",
         )
-    await _enforce_rate_limit(request, policy)
+    grant = await _enforce_quota(request, policy, body)
     return await process_chat(
         body,
         policy,
         session,
         client_ip=_client_ip(request),
         route="/v1/gateway/chat",
+        grant=grant,
     )
 
 
 # --------------------------------------------------------------------------
 # Admin
 # --------------------------------------------------------------------------
+
+
+def _tenant_public(tenant: Tenant, policy: Policy) -> TenantPublic:
+    """Effective policy, not raw columns: a NULL override reads back as the
+    global default it resolves to, so an operator sees what is enforced."""
+    return TenantPublic(
+        id=tenant.id,
+        name=tenant.name,
+        created_at=tenant.created_at,
+        fail_mode=policy.fail_mode,
+        rate_limit_rpm=policy.rate_limit_rpm,
+        rate_limit_tpm=(
+            policy.rate_limit_tpm
+            if policy.rate_limit_tpm is not None
+            else settings.rate_limit_tokens_per_minute
+        ),
+        max_prompt_chars=(
+            policy.max_prompt_chars
+            if policy.max_prompt_chars is not None
+            else settings.max_prompt_chars
+        ),
+        max_output_tokens=(
+            policy.max_output_tokens
+            if policy.max_output_tokens is not None
+            else settings.max_output_tokens
+        ),
+        block_threshold=policy.block_threshold,
+        flag_threshold=policy.flag_threshold,
+        has_system_prompt=bool(tenant.system_prompt),
+    )
 
 
 @app.post(
@@ -275,19 +326,15 @@ async def create_tenant(
         block_threshold=body.block_threshold,
         flag_threshold=body.flag_threshold,
         rate_limit_rpm=body.rate_limit_rpm,
+        rate_limit_tpm=body.rate_limit_tpm,
+        max_prompt_chars=body.max_prompt_chars,
+        max_output_tokens=body.max_output_tokens,
     )
     session.add(tenant)
     await session.commit()
     policy = Policy.from_tenant(tenant)
     return TenantCreated(
-        id=tenant.id,
-        name=tenant.name,
-        created_at=tenant.created_at,
-        fail_mode=policy.fail_mode,
-        rate_limit_rpm=policy.rate_limit_rpm,
-        block_threshold=policy.block_threshold,
-        flag_threshold=policy.flag_threshold,
-        has_system_prompt=bool(tenant.system_prompt),
+        **_tenant_public(tenant, policy).model_dump(),
         api_key=api_key,
     )
 
@@ -300,19 +347,4 @@ async def create_tenant(
 )
 async def list_tenants(session: AsyncSession = Depends(get_session)) -> list[TenantPublic]:
     tenants = (await session.scalars(select(Tenant).order_by(Tenant.created_at))).all()
-    out: list[TenantPublic] = []
-    for tenant in tenants:
-        policy = Policy.from_tenant(tenant)
-        out.append(
-            TenantPublic(
-                id=tenant.id,
-                name=tenant.name,
-                created_at=tenant.created_at,
-                fail_mode=policy.fail_mode,
-                rate_limit_rpm=policy.rate_limit_rpm,
-                block_threshold=policy.block_threshold,
-                flag_threshold=policy.flag_threshold,
-                has_system_prompt=bool(tenant.system_prompt),
-            )
-        )
-    return out
+    return [_tenant_public(t, Policy.from_tenant(t)) for t in tenants]

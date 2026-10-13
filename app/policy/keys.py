@@ -51,6 +51,11 @@ class Policy:
     store_content: bool
     system_prompt: str | None
     canary_token: str | None
+    # LLM04 resource limits. None means "use the global default"; 0 means
+    # "no limit", which is a choice an operator can make per tenant.
+    rate_limit_tpm: int | None = None
+    max_prompt_chars: int | None = None
+    max_output_tokens: int | None = None
 
     @classmethod
     def from_tenant(cls, tenant: Tenant) -> Policy:
@@ -76,6 +81,9 @@ class Policy:
             ),
             system_prompt=tenant.system_prompt,
             canary_token=tenant.canary_token,
+            rate_limit_tpm=tenant.rate_limit_tpm,
+            max_prompt_chars=tenant.max_prompt_chars,
+            max_output_tokens=tenant.max_output_tokens,
         )
 
 

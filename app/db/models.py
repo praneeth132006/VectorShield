@@ -59,6 +59,11 @@ class Tenant(Base):
     rate_limit_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     store_content: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # LLM04 resource limits. NULL = global default, 0 = no limit.
+    rate_limit_tpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_prompt_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     logs: Mapped[list[RequestLog]] = relationship(
         back_populates="tenant", cascade="all, delete-orphan"
     )

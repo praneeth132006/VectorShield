@@ -26,6 +26,19 @@ def score(findings: list[Finding]) -> float:
     return round(1.0 - residual, 4)
 
 
+def _unredactable(findings: list[Finding]) -> bool:
+    """Is there a leak that removing the flagged spans would not contain?
+
+    Almost every outbound finding is redactable: cut the key, keep the answer.
+    A canary hit is not. The marker's presence means the model was reading its
+    system prompt aloud, so deleting the marker leaves the disclosure behind --
+    the surrounding text is the leak. Detectors mark that case explicitly, so
+    the choice is a stated policy rather than a side effect of confidence
+    calibration.
+    """
+    return any(f.metadata.get("unredactable") for f in findings)
+
+
 def decide(
     findings: list[Finding],
     policy: Policy,
@@ -51,7 +64,14 @@ def decide(
     reason = f"{top.detector}: {top.message}"
 
     if risk >= policy.block_threshold:
-        decision = Decision.BLOCK
+        # Outbound, a confident finding still redacts rather than drops: the
+        # secret is gone either way, and the customer keeps the answer they
+        # were waiting for. Only a leak that redaction cannot contain costs
+        # them the whole response.
+        if direction is Direction.OUTBOUND and not _unredactable(findings):
+            decision = Decision.SANITIZE
+        else:
+            decision = Decision.BLOCK
     elif risk >= policy.flag_threshold:
         # The fail mode only governs this ambiguous middle band. "open" keeps
         # real users working and leaves a logged trail; "closed" trades false
