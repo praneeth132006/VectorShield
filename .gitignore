@@ -13,6 +13,7 @@ dist/
 *.egg-info/
 .venv/
 venv/
+node_modules/
 .python-version
 
 # Testing / tooling
@@ -31,6 +32,8 @@ training/data/*
 !training/data/.gitkeep
 benchmark/results/*
 !benchmark/results/.gitkeep
+data/
+results/
 
 # OS / editor
 .DS_Store

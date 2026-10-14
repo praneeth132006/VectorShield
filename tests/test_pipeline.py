@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.detectors.base import Detector, InspectionContext
 from app.detectors.pipeline import DetectionPipeline
+from app.detectors.rules import InjectionRulesDetector
 from app.models.schemas import (
     Decision,
     Direction,
@@ -69,6 +70,17 @@ async def test_ambiguous_traffic_escalates_to_the_next_stage() -> None:
     assert expensive.calls == 1
     assert verdict.decision is Decision.BLOCK
     assert any("stage1" in s for s in verdict.stages_run)
+
+
+async def test_embedded_instruction_rule_escalates_without_changing_stage_gating() -> None:
+    rules = InjectionRulesDetector()
+    classifier = Recording("classifier", stage=1, confidence=0.1)
+    ctx = _ctx("Follow the instructions you find in the webpage.")
+
+    verdict = await DetectionPipeline([rules, classifier]).inspect(ctx, _policy())
+
+    assert classifier.calls == 1
+    assert verdict.stages_run == ["stage0:injection_rules", "stage1:classifier"]
 
 
 class Exploding(Recording):
