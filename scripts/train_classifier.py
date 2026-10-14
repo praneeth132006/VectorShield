@@ -59,7 +59,9 @@ def make_pipeline(c_value: float, small_data: bool) -> Pipeline:
             ),
         ]
     )
-    clf = LogisticRegression(C=c_value, max_iter=2000, class_weight="balanced", solver="liblinear")
+    clf = LogisticRegression(
+        C=c_value, max_iter=2000, class_weight="balanced", solver="liblinear"
+    )
     return Pipeline([("tfidf", features), ("lr", clf)])
 
 

@@ -33,10 +33,12 @@ from app.policy.keys import Policy
 from app.proxy.llm_client import UpstreamError, get_provider, pool
 
 BLOCK_MESSAGE = (
-    "This request was blocked by VectorShield because it matched a prompt-injection or policy rule."
+    "This request was blocked by VectorShield because it matched a prompt-injection "
+    "or policy rule."
 )
 OUTBOUND_BLOCK_MESSAGE = (
-    "This response was withheld by VectorShield because it appeared to leak protected information."
+    "This response was withheld by VectorShield because it appeared to leak protected "
+    "information."
 )
 REDACTION = "[REDACTED BY VECTORSHIELD]"
 
@@ -114,7 +116,9 @@ async def process_chat(
 
     # --- Inbound inspection (LLM01) -------------------------------------
     inbound = await inbound_pipeline.inspect(
-        inspection_context(prompt_text, Direction.INBOUND, policy, _conversation(request.messages)),
+        inspection_context(
+            prompt_text, Direction.INBOUND, policy, _conversation(request.messages)
+        ),
         policy,
     )
 
@@ -188,7 +192,9 @@ async def process_chat(
     outbound = None
     if answer:
         outbound = await outbound_pipeline.inspect(
-            inspection_context(answer, Direction.OUTBOUND, policy, _conversation(request.messages)),
+            inspection_context(
+                answer, Direction.OUTBOUND, policy, _conversation(request.messages)
+            ),
             policy,
         )
         if outbound.decision is Decision.BLOCK:

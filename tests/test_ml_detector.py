@@ -71,7 +71,9 @@ def test_attack_gets_a_finding_and_benign_does_not(model_path: Path) -> None:
     )
     benign = asyncio.run(
         det.inspect(
-            inspection_context("what is your return policy for shoes", Direction.INBOUND, POLICY)
+            inspection_context(
+                "what is your return policy for shoes", Direction.INBOUND, POLICY
+            )
         )
     )
     assert attack and attack[0].confidence > 0.5
@@ -92,7 +94,8 @@ def test_classifier_runs_only_after_stage_zero_marks_ambiguity(model_path: Path)
     clean_pipeline = DetectionPipeline([InjectionRulesDetector(), det])
     clean_verdict = asyncio.run(
         clean_pipeline.inspect(
-            inspection_context("what are your opening hours", Direction.INBOUND, POLICY), POLICY
+            inspection_context("what are your opening hours", Direction.INBOUND, POLICY),
+            POLICY,
         )
     )
     assert not any("tfidf_lr" in stage for stage in clean_verdict.stages_run)

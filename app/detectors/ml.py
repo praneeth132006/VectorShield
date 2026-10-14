@@ -40,7 +40,9 @@ class TfidfInjectionDetector(Detector):
     stage: ClassVar[int] = 1
     directions: ClassVar[tuple[Direction, ...]] = (Direction.INBOUND,)
 
-    def __init__(self, model_path: Path | str | None = None, min_probability: float = 0.30) -> None:
+    def __init__(
+        self, model_path: Path | str | None = None, min_probability: float = 0.30
+    ) -> None:
         self._path = Path(model_path) if model_path else default_model_path()
         self._min_probability = min_probability
         self._pipeline: Any = None

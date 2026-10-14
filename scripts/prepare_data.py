@@ -29,7 +29,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _fallback import FALLBACK_ATTACKS, FALLBACK_BENIGN, SUPPORT_BENIGN  # noqa: E402
+from _fallback import FALLBACK_ATTACKS, FALLBACK_BENIGN, SUPPORT_BENIGN
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
@@ -85,7 +85,11 @@ def load_source(name: str, cfg: dict) -> pd.DataFrame:
         )
         frames.append(
             pd.DataFrame(
-                {"text": df[text_col].astype(str).values, "label": labels.values, "split": split}
+                {
+                    "text": df[text_col].astype(str).values,
+                    "label": labels.values,
+                    "split": split,
+                }
             )
         )
     out = pd.concat(frames, ignore_index=True)
@@ -102,7 +106,9 @@ def dedupe_against(df: pd.DataFrame, seen: set[str]) -> pd.DataFrame:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fallback", action="store_true", help="skip downloads, use tiny data")
+    parser.add_argument(
+        "--fallback", action="store_true", help="skip downloads, use tiny data"
+    )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -111,7 +117,10 @@ def main() -> int:
 
     loaded: dict[str, pd.DataFrame] = {}
     if args.fallback:
-        print("[WARN] using the tiny hand-written fallback set: smoke test only.", file=sys.stderr)
+        print(
+            "[WARN] using the tiny hand-written fallback set: smoke test only.",
+            file=sys.stderr,
+        )
         train_pool = pd.DataFrame(
             {
                 "text": FALLBACK_ATTACKS + FALLBACK_BENIGN,
@@ -131,7 +140,8 @@ def main() -> int:
             raise RuntimeError("jackhhao dataset has no test split for held-out evaluation")
         used_fallback = False
 
-    train_pool = train_pool[~train_pool["text"].map(norm_key).duplicated()].reset_index(drop=True)
+    train_pool = train_pool[~train_pool["text"].map(norm_key).duplicated()]
+    train_pool = train_pool.reset_index(drop=True)
 
     from sklearn.model_selection import train_test_split
 

@@ -48,7 +48,9 @@ class DetectionPipeline:
     async def _run(self, detectors: list[Detector], ctx: InspectionContext) -> list[Finding]:
         if not detectors:
             return []
-        results = await asyncio.gather(*(d.inspect(ctx) for d in detectors), return_exceptions=True)
+        results = await asyncio.gather(
+            *(d.inspect(ctx) for d in detectors), return_exceptions=True
+        )
         findings: list[Finding] = []
         for detector, result in zip(detectors, results, strict=True):
             if isinstance(result, BaseException):
@@ -58,7 +60,9 @@ class DetectionPipeline:
             findings.extend(result)
         return findings
 
-    async def inspect(self, ctx: InspectionContext, policy: Policy, max_stage: int = 2) -> Verdict:
+    async def inspect(
+        self, ctx: InspectionContext, policy: Policy, max_stage: int = 2
+    ) -> Verdict:
         started = time.perf_counter()
         findings: list[Finding] = []
         stages_run: list[str] = []
