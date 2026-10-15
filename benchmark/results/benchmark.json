@@ -1,0 +1,265 @@
+{
+  "generated_at": "2026-10-13T17:05:04Z",
+  "held_out": {
+    "sources": "deepset/prompt-injections, vectorshield/seed",
+    "blocked_only": {
+      "precision": 1.0,
+      "recall": 0.175,
+      "f1": 0.2979,
+      "false_positive_rate": 0.0,
+      "counts": {
+        "tp": 14,
+        "fp": 0,
+        "tn": 114,
+        "fn": 66
+      }
+    },
+    "blocked_or_flagged": {
+      "precision": 0.9615,
+      "recall": 0.625,
+      "f1": 0.7576,
+      "false_positive_rate": 0.0175,
+      "counts": {
+        "tp": 50,
+        "fp": 2,
+        "tn": 112,
+        "fn": 30
+      }
+    },
+    "n": 194,
+    "stage1_escalation_rate": 0.2423,
+    "pipeline_ms_mean": 0.683,
+    "pipeline_ms_p95": 1.994
+  },
+  "evasion": {
+    "none (plain text)": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "zero-width padding": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "letter spacing": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "punctuation splitting": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "leetspeak": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "homoglyphs": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "base64 payload": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    },
+    "rot13": {
+      "detected": 4,
+      "blocked": 4,
+      "total": 4,
+      "detection_rate": 1.0
+    }
+  },
+  "leakage": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "false_positive_rate": 0.0,
+    "counts": {
+      "tp": 26,
+      "fp": 0,
+      "tn": 34,
+      "fn": 0
+    },
+    "n": 60,
+    "by_category": {
+      "aws": {
+        "detected": 2,
+        "total": 2
+      },
+      "openai": {
+        "detected": 2,
+        "total": 2
+      },
+      "anthropic": {
+        "detected": 1,
+        "total": 1
+      },
+      "github": {
+        "detected": 1,
+        "total": 1
+      },
+      "slack": {
+        "detected": 1,
+        "total": 1
+      },
+      "google": {
+        "detected": 1,
+        "total": 1
+      },
+      "stripe": {
+        "detected": 1,
+        "total": 1
+      },
+      "private-key": {
+        "detected": 1,
+        "total": 1
+      },
+      "db-url": {
+        "detected": 2,
+        "total": 2
+      },
+      "jwt": {
+        "detected": 1,
+        "total": 1
+      },
+      "assigned": {
+        "detected": 1,
+        "total": 1
+      },
+      "gateway-key": {
+        "detected": 1,
+        "total": 1
+      },
+      "record": {
+        "detected": 3,
+        "total": 3
+      },
+      "ssn": {
+        "detected": 1,
+        "total": 1
+      },
+      "card": {
+        "detected": 1,
+        "total": 1
+      },
+      "iban": {
+        "detected": 1,
+        "total": 1
+      },
+      "canary": {
+        "detected": 2,
+        "total": 2
+      },
+      "system-prompt": {
+        "detected": 3,
+        "total": 3
+      }
+    },
+    "missed": [],
+    "false_positives": [],
+    "pipeline_ms_mean": 0.0873
+  },
+  "abuse": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "false_positive_rate": 0.0,
+    "counts": {
+      "tp": 18,
+      "fp": 0,
+      "tn": 24,
+      "fn": 0
+    },
+    "n": 42,
+    "by_category": {
+      "character-run": {
+        "detected": 2,
+        "total": 2
+      },
+      "repeated-phrase": {
+        "detected": 2,
+        "total": 2
+      },
+      "low-diversity": {
+        "detected": 1,
+        "total": 1
+      },
+      "unbounded-output": {
+        "detected": 8,
+        "total": 8
+      },
+      "huge-output": {
+        "detected": 5,
+        "total": 5
+      }
+    },
+    "missed": [],
+    "false_positives": []
+  },
+  "extraction": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "false_positive_rate": 0.0,
+    "counts": {
+      "tp": 5,
+      "fp": 0,
+      "tn": 3,
+      "fn": 0
+    },
+    "sessions": 8,
+    "by_scenario": {
+      "templated-sweep": {
+        "detected": 1,
+        "total": 1,
+        "requests": 30,
+        "detected_after": 14
+      },
+      "slot-enumeration": {
+        "detected": 1,
+        "total": 1,
+        "requests": 30,
+        "detected_after": 13
+      },
+      "classification-harvest": {
+        "detected": 1,
+        "total": 1,
+        "requests": 30,
+        "detected_after": 13
+      },
+      "translation-harvest": {
+        "detected": 1,
+        "total": 1,
+        "requests": 30,
+        "detected_after": 16
+      },
+      "config-probing": {
+        "detected": 1,
+        "total": 1,
+        "requests": 12,
+        "detected_after": 9
+      }
+    },
+    "false_positives": []
+  },
+  "latency": {
+    "rounds": 200,
+    "mean_ms": 0.9402,
+    "median_ms": 0.3479,
+    "p95_ms": 2.7484,
+    "p99_ms": 4.9824,
+    "max_ms": 5.5332
+  }
+}

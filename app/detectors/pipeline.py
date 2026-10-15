@@ -12,6 +12,7 @@ import logging
 import time
 
 from app.detectors.base import Detector, InspectionContext
+from app.detectors.triage import triage
 from app.models.schemas import Direction, Finding, Verdict
 from app.policy.engine import decide, score
 from app.policy.keys import Policy
@@ -71,9 +72,26 @@ class DetectionPipeline:
             findings.extend(await self._run(detectors, ctx))
 
             current = score(findings)
-            # Confident either way -> stop paying for deeper stages.
-            if current >= policy.block_threshold or current < policy.flag_threshold:
+
+            # Confident block: deeper stages cannot change the outcome.
+            if current >= policy.block_threshold:
                 break
+
+            # Below the flag line the cheap layer has no opinion -- and rule
+            # silence is not evidence of innocence, since stage 0 is
+            # high-precision and low-recall. Triage decides whether the input
+            # is worth an expensive look, so ordinary product traffic stops
+            # here while anything discussing the assistant escalates.
+            if current < policy.flag_threshold:
+                # Triage exists to decide whether a *prompt* deserves the
+                # classifier. Outbound has no stage 1, so there is nothing to
+                # escalate to and nothing to pay for.
+                if ctx.direction is not Direction.INBOUND:
+                    break
+                verdict = triage(ctx.text)
+                if not verdict.escalate:
+                    break
+                stages_run.append(f"triage:{verdict.summary}")
 
         latency_ms = (time.perf_counter() - started) * 1000
         return decide(
@@ -85,17 +103,67 @@ class DetectionPipeline:
         )
 
 
-def build_pipeline() -> DetectionPipeline:
-    """Assemble the shipped detectors.
+def build_inbound_pipeline() -> DetectionPipeline:
+    """Detectors that inspect what the client sends.
 
-    Phase 0 runs an empty pipeline -- a real proxy with the seams in place. Phase 1
-    registers the injection detectors here, Phase 2 the leakage detectors.
+    Covers LLM01 (injection), the content-shaped half of LLM04 (requests built
+    to cost more than they look -- the volume half is enforced as a hard limit
+    in `app/ratelimit/quota.py`, not detected here), and LLM10 (extraction
+    patterns across requests).
     """
-    return DetectionPipeline([])
+    from app.detectors.abuse import ResourceAbuseDetector
+    from app.detectors.classifier import InjectionClassifier
+    from app.detectors.extraction import ExtractionDetector
+    from app.detectors.rules import (
+        EncodedPayloadDetector,
+        ObfuscationDetector,
+        RuleDetector,
+    )
+
+    return DetectionPipeline(
+        [
+            RuleDetector(),
+            ObfuscationDetector(),
+            EncodedPayloadDetector(),
+            ResourceAbuseDetector(),
+            ExtractionDetector(),
+            InjectionClassifier(),
+        ]
+    )
 
 
-inbound_pipeline = build_pipeline()
-outbound_pipeline = build_pipeline()
+def build_outbound_pipeline() -> DetectionPipeline:
+    """Detectors that inspect what the model returns (OWASP LLM06).
+
+    All of these are stage 0: a response is inspected on the way to a user who
+    is already waiting, so there is no budget for a model here. Structure --
+    key shapes, checksums, a random canary, shingle overlap -- carries the
+    confidence instead.
+    """
+    from app.config import settings as _settings
+
+    if not _settings.outbound_scanning:
+        return DetectionPipeline([])
+
+    from app.detectors.leakage import (
+        CanaryDetector,
+        PIIDetector,
+        SecretDetector,
+        SystemPromptLeakDetector,
+    )
+
+    return DetectionPipeline(
+        [
+            CanaryDetector(),
+            SecretDetector(),
+            SystemPromptLeakDetector(),
+            PIIDetector(),
+        ]
+    )
+
+
+inbound_pipeline = build_inbound_pipeline()
+outbound_pipeline = build_outbound_pipeline()
 
 
 def inspection_context(

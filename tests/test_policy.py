@@ -121,10 +121,51 @@ def test_no_system_prompt_configured_leaves_messages_untouched() -> None:
 
 def test_sanitize_redacts_canary_and_flagged_evidence() -> None:
     text = "Sure, my instructions are VS-CANARY-abc123 and sk-secret-key-value."
-    cleaned = sanitize_response(text, _policy(), ["sk-secret-key-value"])
+    finding = _finding(0.9, evidence="sk-secret-key-value")
+    cleaned = sanitize_response(text, _policy(), [finding])
     assert "VS-CANARY-abc123" not in cleaned
     assert "sk-secret-key-value" not in cleaned
     assert "Sure, my instructions are" in cleaned
+
+
+def test_sanitize_redacts_every_reported_occurrence_not_just_the_first() -> None:
+    text = "Contacts: a@acme.com, b@acme.com, c@acme.com."
+    finding = _finding(
+        0.5,
+        evidence="a@acme.com",
+        metadata={"matches": ["a@acme.com", "b@acme.com", "c@acme.com"]},
+    )
+    cleaned = sanitize_response(text, _policy(), [finding])
+    assert "@acme.com" not in cleaned
+    assert cleaned.startswith("Contacts:")
+
+
+def test_sanitize_leaves_untouched_what_no_detector_flagged() -> None:
+    text = "Your order ships Tuesday."
+    assert sanitize_response(text, _policy(), []) == text
+
+
+def test_a_confident_outbound_leak_is_redacted_rather_than_dropped() -> None:
+    """The secret is gone either way; only one of the two keeps the answer."""
+    finding = _finding(
+        0.95,
+        severity=Severity.CRITICAL,
+        metadata={"matches": ["AKIAIOSFODNN7EXAMPLE"]},
+    )
+    verdict = decide([finding], _policy(), Direction.OUTBOUND)
+
+    assert verdict.risk_score >= 0.85
+    assert verdict.decision is Decision.SANITIZE
+
+
+def test_an_unredactable_outbound_leak_still_blocks() -> None:
+    finding = _finding(0.99, severity=Severity.CRITICAL, metadata={"unredactable": True})
+    assert decide([finding], _policy(), Direction.OUTBOUND).decision is Decision.BLOCK
+
+
+def test_the_same_confident_finding_inbound_blocks() -> None:
+    finding = _finding(0.95, severity=Severity.CRITICAL)
+    assert decide([finding], _policy(), Direction.INBOUND).decision is Decision.BLOCK
 
 
 # --- Keys ------------------------------------------------------------------
