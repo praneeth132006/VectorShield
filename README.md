@@ -42,7 +42,7 @@ VectorShield is being built in phases. This is honest about what exists today:
 | **2** | Module 2 — data leakage & PII detection, canary verification (LLM06) | ✅ **shipped** |
 | **3** | Module 3 — DoS/abuse hardening, token-budget limits (LLM04) | ✅ **shipped** |
 | **4** | Module 4 — model extraction detection (LLM10) | ✅ **shipped** |
-| **5** | Streamlit ops dashboard + published benchmark table | ✅ **shipped** |
+| **5** | Ops dashboards (Streamlit audit view + React console) + published benchmark table | ✅ **shipped** |
 
 **All four modules are in place.** A jailbreak attempt is caught and blocked before it reaches
 your model; a response that carries an API key, a customer record, or your system prompt is
@@ -318,6 +318,27 @@ Two things it will tell you that the benchmark cannot:
 
 Prompt text is absent from the triage view unless the tenant opted into retention or the request
 was blocked, and the UI says so rather than rendering an empty column as though nothing happened.
+
+### The React console
+
+A second, complementary view at <http://localhost:5173>, aimed at the opposite moment. The
+Streamlit dashboard answers *"what has my gateway been doing?"* from the audit database. The
+React console answers *"what would my gateway do with this prompt?"* against the live API.
+
+```bash
+.venv/bin/python -m uvicorn app.main:app --reload --port 8000   # terminal 1
+cd frontend && npm install && npm run dev                        # terminal 2
+```
+
+Paste a tenant key into **Prompt scanner** and send a prompt. You get the decision, the risk
+score, every finding with its detector, severity and confidence, which pipeline stages actually
+ran, and the measured gateway overhead. **Security test mode** is on by default: it sends
+`dry_run: true`, so the full inbound pipeline runs without an upstream model configured — which
+makes it the fastest way to see the gateway work on a fresh clone.
+
+It talks to the public API only (`GET /health`, `POST /v1/gateway/chat`) and stores nothing: the
+API key lives in page memory, and its history and charts cover the current browser tab. See
+[`frontend/README.md`](frontend/README.md).
 
 ### Or run the whole stack in Docker
 

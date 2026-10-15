@@ -47,3 +47,7 @@ benchmark/results/*
 
 # Local agent/editor session config
 .claude/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
